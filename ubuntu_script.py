@@ -2,30 +2,68 @@
 import os
 import subprocess
 import getpass
+import sys
 
 def print_banner():
     print("""
-          
 ██╗   ██╗██████╗ ███████╗███████╗███████╗███╗   ██╗██████╗ ███████╗██████╗ 
 ██║   ██║██╔══██╗██╔════╝██╔════╝██╔════╝████╗  ██║██╔══██╗██╔════╝██╔══██╗
 ██║   ██║██║  ██║█████╗  █████╗  █████╗  ██╔██╗ ██║██║  ██║█████╗  ██████╔╝
 ██║   ██║██║  ██║██╔══╝  ██╔══╝  ██╔══╝  ██║╚██╗██║██║  ██║██╔══╝  ██╔══██╗
 ╚██████╔╝██████╔╝███████╗██║     ███████╗██║ ╚████║██████╔╝███████╗██║  ██║
  ╚═════╝ ╚═════╝ ╚══════╝╚═╝     ╚══════╝╚═╝  ╚═══╝╚═════╝ ╚══════╝╚═╝  ╚═╝
-                                                                           
     """)
     print("WARNING: This script needs to be run by an admin to work properly.\n")
 
-def menu():
-    print("Please select an option:")
-    print("  1 - Run Initial Access Script")
-    print("  2 - Install Monitor Software")
-    print("  3 - Monitor System")
-    choice = input("Enter your choice (1-3): ")
-    return choice
+def confirm_installation(software_name):
+    response = input(f"Do you want to install and configure {software_name}? (y/n): ")
+    return response.lower() == 'y'
+
+def install_monitor_software():
+    print("Installing monitor software...")
+    subprocess.call(['sudo', 'apt-get', 'update'])
+
+    if confirm_installation("ClamAV"):
+        subprocess.call(['sudo', 'apt-get', 'install', '-y', 'clamav', 'clamav-daemon'])
+        print("Setting up ClamAV...")
+        subprocess.call(['sudo', 'systemctl', 'stop', 'clamav-freshclam'])
+        subprocess.call(['sudo', 'freshclam'])
+        subprocess.call(['sudo', 'systemctl', 'start', 'clamav-freshclam'])
+
+    if confirm_installation("Fail2Ban"):
+        subprocess.call(['sudo', 'apt-get', 'install', '-y', 'fail2ban'])
+        print("Setting up Fail2Ban...")
+        subprocess.call(['sudo', 'cp', '/etc/fail2ban/jail.conf', '/etc/fail2ban/jail.local'])
+        with open('/etc/fail2ban/jail.local', 'a') as f:
+            f.write("\n[sshd]\nenabled = true\n")
+        subprocess.call(['sudo', 'systemctl', 'restart', 'fail2ban'])
+
+    if confirm_installation("Lynis"):
+        subprocess.call(['sudo', 'apt-get', 'install', '-y', 'lynis'])
+
+    if confirm_installation("AIDE"):
+        subprocess.call(['sudo', 'apt-get', 'install', '-y', 'aide', 'aide-common'])
+        print("Initializing AIDE...")
+        subprocess.call(['sudo', 'aideinit'])
+        subprocess.call(['sudo', 'mv', '/var/lib/aide/aide.db.new', '/var/lib/aide/aide.db'])
+
+def monitor_system():
+    print("Starting system overwatch...")
+    # ClamAV Scan
+    print("Initiating ClamAV scan...")
+    subprocess.call(['clamscan', '-r', '/'])
+
+    # Lynis Audit in a new terminal
+    print("Running Lynis audit in a new terminal...")
+    subprocess.call(['gnome-terminal', '--', 'lynis', 'audit', 'system'])
 
 def run_initial_access():
     print("Running Initial Access Script...")
+    # Uninstall and reinstall PAM
+    print("Uninstalling and reinstalling PAM...")
+    subprocess.call(['sudo', 'apt-get', 'remove', '--purge', '-y', 'libpam0g', 'libpam-modules', 'libpam-modules-bin'])
+    subprocess.call(['sudo', 'apt-get', 'install', '-y', 'libpam0g', 'libpam-modules', 'libpam-modules-bin'])
+
     # Remove non-essential services
     services_to_keep = input("Enter essential services to keep (comma-separated, e.g., 'dns,mail,ssh'): ")
     keep_list = services_to_keep.split(',')
@@ -60,11 +98,13 @@ def run_initial_access():
 
     print("Initial access configuration is complete.")
 
-def install_monitor_software():
-    print("Installing monitor software...")
-
-def monitor_system():
-    print("Monitoring system...")
+def menu():
+    print("Please select an option:")
+    print("  1 - Run Initial Access Script")
+    print("  2 - Install Monitor Software")
+    print("  3 - Start System Audit")
+    choice = input("Enter your choice (1-3): ")
+    return choice
 
 def main():
     print_banner()
@@ -76,6 +116,9 @@ def main():
             install_monitor_software()
         elif choice == '3':
             monitor_system()
+        elif choice == '4':
+            print("Exiting...")
+            sys.exit(1)
         else:
             print("Invalid choice. Please try again.")
 
